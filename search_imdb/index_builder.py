@@ -13,7 +13,7 @@ class IndexBuilder:
         reversed_index = {}
         i = 1
         for (movie_id, details) in id_to_details.items():
-            utils.progress_bar(i, len(id_to_details))
+            utils.progress_bar(i + 1, len(id_to_details))
             bag_of_strings = set()
             for v in details.values():
                 bag_of_strings.update(self.flatten_instance(v))
@@ -45,11 +45,18 @@ class IndexBuilder:
         if not isinstance(a, (list, tuple, dict)):
             return [a]
         ans = []
-        for item in a:
-            if isinstance(item, (list, tuple, dict)):
-                ans.extend(self.flatten_instance(item))
-            else:
-                ans.append(item)
+        if not isinstance(a, dict):
+            for item in a:
+                if isinstance(item, (list, tuple, dict)):
+                    ans.extend(self.flatten_instance(item))
+                else:
+                    ans.append(item)
+        else:
+            for item in a.items():
+                if isinstance(item, (list, tuple, dict)):
+                    ans.extend(self.flatten_instance(item))
+                else:
+                    ans.append(item)
         return ans
 
     def run(self, input_file_path, output_file_path):

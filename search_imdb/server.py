@@ -44,8 +44,9 @@ class MovieSearch:
                 if len(list_of_movies) == 0:
                     list_of_movies.update(self.index[keyword])
                 else:
-                    list_of_movies.intersection(self.index[keyword])
-        res = [self.id_to_details[id]['title'] for id in list_of_movies]
+                    list_of_movies = list_of_movies.intersection(
+                        self.index[keyword])
+        res = [item[1] for item in list_of_movies]
         return res
 
     def parse_query(self, query_text):

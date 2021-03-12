@@ -134,4 +134,4 @@ Example file: test_api.py
 2. Multi-threaded crawler.
 3. Handling stopping words.
 4. To handle larger size of data, we can use database, or build shards etc.
-5. Stream IO
+5. Stream IO.
