@@ -60,21 +60,24 @@ Index
 
 ### Crawler
 
-Option 1: synchronized crawling
+Option 1: Synchronized crawling
 
 Pros:
-- Gurantee the data accuracy
+- Gurantee the data accuracy.
 
 Cons:
 - Slow
 
-Option 2: asynchronous crawling
+Option 2: Asynchronous crawling.
 
 Pros: 
 - Faster processing
 
-For beta version, choose synchronized crawling to get all the data accurately.
-Can update to synchronous crawling in the future.
+Option 3: Multithread
+Pros: 
+- Improve the processing speed ot next level.
+
+Prefer to use asynchronous crawling for faster processing. Can update to multithread later.
 
 ### Index Builder
 The intuitive is to build a reversed index from token to movie_id.
@@ -115,10 +118,13 @@ query_text: string which can contains "" for exact search.
 Please run `pip install -r requirements.txt`
 
 #### How to ues it
+Before run:
+- Go to the directory of search_imdb/search_imdb.
+- Create data folder. e.g. Run `mkdir data` in terminal under search_imdb/search_imdb directory.
 
 1. Run in command line
     - Open Terminal.
-    - Go to the directory of search_imdb.
+    - Go to the directory of search_imdb/search_imdb.
     - Type `python3 server.py`. First time run will take some time to get data and initilize.
     - Follow the instructions in the Terminal.
 
@@ -131,7 +137,6 @@ Example file: test_api.py
 ### What can be improve & What's more
 
 1. Support each of keywords in Summary.
-2. Multi-threaded crawler.
-3. Handling stopping words.
-4. To handle larger size of data, we can use database, or build shards etc.
-5. Stream IO.
+2. Handling stopping words.
+3. To handle larger size of data, we can use database, or build shards etc.
+4. Stream IO.
