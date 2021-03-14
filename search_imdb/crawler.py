@@ -24,9 +24,12 @@ class IMDB1KCrawler:
         self.URL_BASE_TOP1K = self.DOMAIN + u'/search/title/?groups=top_1000&view=simple&sort=user_rating,desc&start={}&ref_=adv_nxt'
         self.NUM_MOVIES_PER_PAGE = 50
         self.TOTAL_NUM_OF_MOVIES = 1000
-        self.NUM_REQUEST_PER_BATCH = 5
+        self.NUM_WORKERS = 5
 
     async def request_list_page(self, url):
+        """
+        Async function for request one list page.
+        """
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(
                 verify_ssl=False)) as session:
             async with session.get(url) as resp:
@@ -34,7 +37,18 @@ class IMDB1KCrawler:
                 res = self.parse_top1k_result(body)
                 return res
 
-    async def request_list_pages(self):
+    async def list_page_worker(self, queue, id_to_movie_link):
+        """
+        Worker function for processing one list page.
+        """
+        while True:
+            url = await queue.get()
+            res = await self.request_list_page(url)
+            queue.task_done()
+            id_to_movie_link.extend(res)
+            utils.progress_bar(len(id_to_movie_link), self.TOTAL_NUM_OF_MOVIES)
+
+    async def request_list_pages(self, loop):
         """
         Crawls IMDB top 1000 movie list page.
         Parses the content and write the result to a file with movie ids and movie links.
@@ -42,21 +56,21 @@ class IMDB1KCrawler:
         print('Starts to handle top 1000 movie list.')
         num_pages = math.ceil(self.TOTAL_NUM_OF_MOVIES /
                               self.NUM_MOVIES_PER_PAGE)
-        urls = [
-            self.URL_BASE_TOP1K.format(page * self.NUM_MOVIES_PER_PAGE + 1)
-            for page in range(num_pages)
-        ]
-        batches = math.ceil(len(urls) / self.NUM_REQUEST_PER_BATCH)
+        queue = asyncio.Queue()
+        for page in range(num_pages):
+            url = self.URL_BASE_TOP1K.format(page * self.NUM_MOVIES_PER_PAGE +
+                                             1)
+            queue.put_nowait(url)
         id_to_movie_link = []
-        for batch in range(batches):
-            st = batch * self.NUM_REQUEST_PER_BATCH
-            ed = min(len(urls), (batch + 1) * self.NUM_REQUEST_PER_BATCH)
-            sub_results = await asyncio.gather(
-                *[self.request_list_page(u) for u in urls[st:ed]])
-            for res in sub_results:
-                id_to_movie_link.extend(res)
-                utils.progress_bar(len(id_to_movie_link),
-                                   self.TOTAL_NUM_OF_MOVIES)
+        tasks = []
+        for i in range(self.NUM_WORKERS):
+            task = loop.create_task(
+                self.list_page_worker(queue, id_to_movie_link))
+            tasks.append(task)
+        await queue.join()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         print('\n{} movie links parsed.'.format(len(id_to_movie_link)))
         return id_to_movie_link
 
@@ -76,7 +90,9 @@ class IMDB1KCrawler:
             href = anchor['href']
             movie_id = re.search('/title/(.*)/', href, flags=0).group(1)
             movie_link = self.DOMAIN + href
-            id_to_movie_link.append((movie_id, movie_link))
+            cast_link = '{}/title/{}/fullcredits?ref_=tt_cl_sm#cast'.format(
+                self.DOMAIN, movie_id)
+            id_to_movie_link.append((movie_id, movie_link, cast_link))
         return id_to_movie_link
 
     def parse_cast_page(self, content):
@@ -121,8 +137,10 @@ class IMDB1KCrawler:
         }
         return formatted_content
 
-    async def request_movie_and_cast_page(self, movie_id, movie_link,
-                                          cast_link):
+    async def request_movie_and_cast_page(self, movie_link, cast_link):
+        """
+        Async function for request one movie page and corresponding cast page.
+        """
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(
                 verify_ssl=False)) as session:
             async with session.get(movie_link) as movie_resp:
@@ -132,43 +150,50 @@ class IMDB1KCrawler:
                 cast_body = await cast_resp.text()
                 casts = self.parse_cast_page(cast_body)
             formatted_content['casts'] = casts
-            return {movie_id: formatted_content}
+            return formatted_content
 
-    async def request_movie_pages(self, id_to_movie_link):
+    async def movie_page_worker(self, queue, id_to_details):
+        """
+        Worker function for processing one movie details.
+        """
+        while True:
+            movie_id, movie_link, cast_link = await queue.get()
+            res = await self.request_movie_and_cast_page(movie_link, cast_link)
+            queue.task_done()
+            id_to_details[movie_id] = res
+            utils.progress_bar(len(id_to_details), self.TOTAL_NUM_OF_MOVIES)
+
+    async def request_movie_pages(self, loop, id_to_movie_link):
         """
         Crawls single movie detail page. Returns a map of <movie_id, formatted data>.
         """
-        batches = math.ceil(len(id_to_movie_link) / self.NUM_REQUEST_PER_BATCH)
         print('Starts to request and parse movie details.')
-        links = []
-        for (movie_id, movie_link) in id_to_movie_link:
-            cast_link = '{}/title/{}/fullcredits?ref_=tt_cl_sm#cast'.format(
-                self.DOMAIN, movie_id)
-            links.append((movie_id, movie_link, cast_link))
+        queue = asyncio.Queue()
+        for item in id_to_movie_link:
+            queue.put_nowait(item)
         id_to_details = {}
-        for batch in range(batches):
-            st = batch * self.NUM_REQUEST_PER_BATCH
-            ed = min(len(id_to_movie_link),
-                     (batch + 1) * self.NUM_REQUEST_PER_BATCH)
-            sub_results = await asyncio.gather(*[
-                self.request_movie_and_cast_page(id, movie_link, cast_link)
-                for id, movie_link, cast_link in links[st:ed]
-            ])
-            for res in sub_results:
-                id_to_details.update(res)
-            utils.progress_bar(len(id_to_details), self.TOTAL_NUM_OF_MOVIES)
+        tasks = []
+        for i in range(self.NUM_WORKERS):
+            task = loop.create_task(
+                self.movie_page_worker(queue, id_to_details))
+            tasks.append(task)
+        await queue.join()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         print('\nSuccessfully parsed {} movie details.'.format(
             len(id_to_details)))
         return id_to_details
 
     def run(self):
         loop = asyncio.get_event_loop()
-        id_to_movie_link = loop.run_until_complete(self.request_list_pages())
+        id_to_movie_link = loop.run_until_complete(
+            self.request_list_pages(loop))
 
         with open(const.ID_TO_MOVIE_FILE_PATH, 'w') as f:
             f.writelines([
-                '{},{}\n'.format(movie_id, movie_link)
-                for movie_id, movie_link in id_to_movie_link
+                '{},{},{}\n'.format(movie_id, movie_link, cast_link)
+                for movie_id, movie_link, cast_link in id_to_movie_link
             ])
             print('Results are written to file {}'.format(f.name))
         # To debug, check or use intermediate results, please remove the comments below.
@@ -179,7 +204,7 @@ class IMDB1KCrawler:
         #         len(id_to_movie_link)))
 
         id_to_details = loop.run_until_complete(
-            self.request_movie_pages(id_to_movie_link))
+            self.request_movie_pages(loop, id_to_movie_link))
 
         sys.setrecursionlimit(100000)
         # Dumps formatted results a pickle file.

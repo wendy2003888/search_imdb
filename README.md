@@ -66,16 +66,20 @@ Pros:
 - Gurantee the data accuracy.
 
 Cons:
-- Slow
+- Slow.
 
 Option 2: Asynchronous crawling.
 
 Pros: 
-- Faster processing
+- Faster processing.
 
 Option 3: Multithread
 Pros: 
 - Improve the processing speed ot next level.
+Cons：
+- More complex design, coding, testing and debugging.
+- Potential deadlocks.
+- May introduce bugs due to a bad design.
 
 Prefer to use asynchronous crawling for faster processing. Can update to multithread later.
 
@@ -115,6 +119,8 @@ query_text: string which can contains "" for exact search.
 ### User Guide
 
 #### Requirements
+Python >= 3.6
+
 Please run `pip install -r requirements.txt`
 
 #### How to ues it
